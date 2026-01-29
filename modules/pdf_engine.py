@@ -73,10 +73,11 @@ class BivaReportPDF(FPDF):
             self.cell(50, 7, label, 1)
             self.set_font('Arial', 'B', 9)
             
-            # Recupera valore attuale
+            # Valore attuale
             val_c = data.get(data_key, val_curr) if data_key else val_curr
             self.cell(40, 7, f"{val_c} {unit}", 1, 0, 'C')
             
+            # Storico
             if prev_data and key_prev and key_prev in prev_data:
                 try:
                     val_prev = float(prev_data[key_prev])
@@ -94,7 +95,7 @@ class BivaReportPDF(FPDF):
             else:
                 self.cell(70, 7, "-", 1, 1, 'C')
 
-        # AGGIUNTE RIGHE MANCANTI (Peso, Rz, Xc)
+        # TUTTE LE RIGHE RICHIESTE
         add_row("Peso Corporeo", data.get('Weight', 0), "kg", 'Peso', 'Weight')
         add_row("Resistenza (Rz)", data.get('Rz', 0), "ohm", 'Rz', 'Rz')
         add_row("Reattanza (Xc)", data.get('Xc', 0), "ohm", 'Xc', 'Xc')
