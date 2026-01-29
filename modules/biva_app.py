@@ -10,7 +10,7 @@ import openai
 from PIL import Image
 from modules.calculations import calculate_advanced_metrics
 from modules.pdf_engine import BivaReportPDF
-from modules.storage import get_patient_history, save_visit
+from modules.storage import save_visit
 
 # --- FUNZIONI GRAFICHE ---
 def draw_body_map(pha_dx, pha_sx):
@@ -36,7 +36,7 @@ def draw_body_map(pha_dx, pha_sx):
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     return fig
 
-# --- FUNZIONE DIAGNOSI ---
+# --- FUNZIONE DIAGNOSI (PROMPT ORIGINALE "DIRETTORE SCIENTIFICO") ---
 def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None):
     key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
     if not key: return "Errore API Key."
@@ -60,6 +60,7 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             - Rz: {data['Rz']} | Xc: {data['Xc']}
             """
 
+        # --- IL TUO PROMPT ORIGINALE ---
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
         Il tuo compito è analizzare i dati BIA e redigere un referto tecnico altamente specializzato.
@@ -104,13 +105,12 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
 
 # --- FUNZIONE PRINCIPALE ---
 def run_biva():
-    # Stili CSS locali
     st.markdown("""<style>
         .stMetric { background-color: #111; padding: 10px; border-left: 3px solid #E20613; }
         div[data-testid="stMetricValue"] { color: #E20613 !important; }
     </style>""", unsafe_allow_html=True)
 
-    # --- SIDEBAR ---
+    # SIDEBAR
     if os.path.exists("logo_area199.png"): 
         st.sidebar.image("logo_area199.png", use_container_width=True)
     elif os.path.exists("logo_dark.jpg"):
@@ -148,7 +148,6 @@ def run_biva():
         st.session_state['data_sx'] = calculate_advanced_metrics(rz_sx, xc_sx, h, w, age, gender) if mode == "Bilateral (DX+SX)" else None
         st.session_state['diagnosis'] = None
 
-    # --- MAIN PAGE ---
     if st.session_state.get('analyzed'):
         d = st.session_state['data']
         d_sx = st.session_state.get('data_sx')
@@ -158,10 +157,8 @@ def run_biva():
         
         t1, t2, t3 = st.tabs(["DATI", "GRAFICI", "REFERTO"])
         
-        # INIZIALIZZIAMO LE VARIABILI GRAFICI A NONE PER SICUREZZA
-        fig_biva = None
-        fig_bars = None
-        fig_body = None
+        # Inizializza variabili grafici
+        fig_biva, fig_bars, fig_body = None, None, None
 
         with t1:
             c1, c2, c3, c4 = st.columns(4)
@@ -190,7 +187,6 @@ def run_biva():
             else: c_g1, c_g2 = st.columns(2)
                 
             with c_g1:
-                # GRAFICO BIVA (RXc)
                 fig_biva, ax = plt.subplots(figsize=(4, 5))
                 fig_biva.patch.set_facecolor('white'); ax.set_facecolor('white')
                 ax.scatter(d['Rz']/(h/100), d['Xc']/(h/100), c='red', s=100, label="DX", edgecolor='black')
@@ -202,9 +198,8 @@ def run_biva():
                 ax.set_xlabel("R/H (Ohm/m)", fontsize=8); ax.set_ylabel("Xc/H (Ohm/m)", fontsize=8)
                 ax.legend(fontsize=8)
                 st.pyplot(fig_biva)
-                
+            
             with c_g2:
-                # GRAFICO BARRE COMPOSIZIONE
                 fig_bars, ax2 = plt.subplots(figsize=(4, 5))
                 fig_bars.patch.set_facecolor('white'); ax2.set_facecolor('white')
                 bars = ax2.barh(['FM', 'SMM', 'BCM'], [d['FM_kg'], d['SMM_kg'], d['BCM_kg']], color=['#fca5a5', '#E20613', '#4ade80'])
@@ -216,7 +211,6 @@ def run_biva():
                 
             if mode == "Bilateral (DX+SX)" and d_sx:
                 with c_g3:
-                    # BODY MAP
                     fig_body = draw_body_map(d['PhA'], d_sx['PhA'])
                     st.pyplot(fig_body)
 
@@ -243,10 +237,9 @@ def run_biva():
                 except: st.error("Errore DB")
         
         with c_p:
-            # GENERAZIONE PDF AUTOMATICA (SENZA DOPPIO TASTO)
+            # CORREZIONE ERRORE PDF: Rimossa la chiamata .encode('latin-1')
             try:
-                # Rigeneriamo al volo i grafici se non sono in memoria (es. cambio tab)
-                # Nota: fig_biva è definita nel blocco t2. Se Streamlit riesegue lo script, t2 viene eseguito e fig_biva esiste.
+                # Rigenera immagini se necessario (es. cambio tab)
                 if fig_biva and fig_bars:
                     biva_path = os.path.join(tempfile.gettempdir(), "biva.png")
                     bars_path = os.path.join(tempfile.gettempdir(), "bars.png")
@@ -263,7 +256,15 @@ def run_biva():
                     pdf_data['Report_Text'] = st.session_state.get('diagnosis', "")
                     pdf.generate_body(pdf_data, graph1_path=biva_path, graph2_path=bars_path, body_map_path=body_path)
                     
-                    st.download_button("📄 SCARICA REFERTO PDF", bytes(pdf.output(dest='S').encode('latin-1')), f"Referto_{name}.pdf", "application/pdf")
+                    # CORREZIONE QUI: pdf.output(dest='S') restituisce già bytes in fpdf2
+                    pdf_content = pdf.output(dest='S')
+                    # Se per qualche motivo fosse stringa (fpdf vecchio), encode. Se è bytearray (fpdf2), no.
+                    if isinstance(pdf_content, str):
+                        pdf_bytes = pdf_content.encode('latin-1')
+                    else:
+                        pdf_bytes = bytes(pdf_content)
+
+                    st.download_button("📄 SCARICA REFERTO PDF", pdf_bytes, f"Referto_{name}.pdf", "application/pdf")
                 else:
                     st.warning("⚠️ Vai al tab 'GRAFICI' per generare le immagini prima di scaricare il PDF.")
             except Exception as e:
