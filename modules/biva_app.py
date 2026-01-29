@@ -39,7 +39,7 @@ def draw_body_map(pha_dx, pha_sx):
 # --- FUNZIONE DIAGNOSI ---
 def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None):
     key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
-    if not key: return "Errore API Key: Controlla i secrets."
+    if not key: return "Errore API Key."
 
     try:
         client = openai.Client(api_key=key)
@@ -62,7 +62,7 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
 
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
-        Il tuo compito è analizzare i dati BIA (Bioimpedenziometria) e redigere un referto tecnico altamente specializzato.
+        Il tuo compito è analizzare i dati BIA e redigere un referto tecnico altamente specializzato.
         Il tuo tono è: Scientifico, Clinico, Oggettivo, Autoritario ("No Sugar-coating").
 
         DATI SOGGETTO:
@@ -71,7 +71,7 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         - Età: {age} anni
         - Sport/Attività: {subject_type}
         - Peso: {weight} kg | Altezza: {height} cm
-        - Note Cliniche/Stato: {clinical_notes}
+        - Note Cliniche: {clinical_notes}
 
         DATI STRUMENTALI:
         {dati_strumentali_block}
@@ -104,12 +104,13 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
 
 # --- FUNZIONE PRINCIPALE ---
 def run_biva():
+    # Stili CSS locali
     st.markdown("""<style>
         .stMetric { background-color: #111; padding: 10px; border-left: 3px solid #E20613; }
         div[data-testid="stMetricValue"] { color: #E20613 !important; }
     </style>""", unsafe_allow_html=True)
 
-    # --- IMMAGINI SENZA "assets/" ---
+    # --- SIDEBAR ---
     if os.path.exists("logo_area199.png"): 
         st.sidebar.image("logo_area199.png", use_container_width=True)
     elif os.path.exists("logo_dark.jpg"):
@@ -147,6 +148,7 @@ def run_biva():
         st.session_state['data_sx'] = calculate_advanced_metrics(rz_sx, xc_sx, h, w, age, gender) if mode == "Bilateral (DX+SX)" else None
         st.session_state['diagnosis'] = None
 
+    # --- MAIN PAGE ---
     if st.session_state.get('analyzed'):
         d = st.session_state['data']
         d_sx = st.session_state.get('data_sx')
@@ -156,6 +158,11 @@ def run_biva():
         
         t1, t2, t3 = st.tabs(["DATI", "GRAFICI", "REFERTO"])
         
+        # INIZIALIZZIAMO LE VARIABILI GRAFICI A NONE PER SICUREZZA
+        fig_biva = None
+        fig_bars = None
+        fig_body = None
+
         with t1:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("PhA", f"{d['PhA']}°")
@@ -163,34 +170,68 @@ def run_biva():
             c3.metric("SMM", f"{d['SMM_kg']} kg")
             c4.metric("TBW%", f"{d['TBW_perc']}%")
             
-            st.dataframe(pd.DataFrame({
-                "Parametro": ["FM (Grasso)", "FFM (Magro)", "BCM (Cellule)"],
-                "Valore (kg)": [d['FM_kg'], d['FFM_kg'], d['BCM_kg']]
-            }), hide_index=True)
+            st.divider()
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                st.markdown("#### Composizione Corporea")
+                st.dataframe(pd.DataFrame({
+                    "Parametro": ["Grasso (FM)", "Magro (FFM)", "Muscolo (SMM)", "Cellule (BCM)"],
+                    "Valore (kg)": [d['FM_kg'], d['FFM_kg'], d['SMM_kg'], d['BCM_kg']]
+                }), hide_index=True, use_container_width=True)
+            with col_d2:
+                st.markdown("#### Bilancio Idrico")
+                st.dataframe(pd.DataFrame({
+                    "Compartimento": ["Acqua Totale (TBW)", "Extra-Cellulare (ECW)", "Intra-Cellulare (ICW)"],
+                    "Volume (L)": [d['TBW_L'], d['ECW_L'], d['ICW_L']]
+                }), hide_index=True, use_container_width=True)
 
         with t2:
-            c_g1, c_g2 = st.columns(2)
+            if mode == "Bilateral (DX+SX)": c_g1, c_g2, c_g3 = st.columns([1, 1, 1])
+            else: c_g1, c_g2 = st.columns(2)
+                
             with c_g1:
+                # GRAFICO BIVA (RXc)
                 fig_biva, ax = plt.subplots(figsize=(4, 5))
-                ax.scatter(d['Rz']/(h/100), d['Xc']/(h/100), c='red', s=100, label="DX")
-                if d_sx: ax.scatter(d_sx['Rz']/(h/100), d_sx['Xc']/(h/100), c='cyan', s=80, label="SX")
-                ax.invert_yaxis()
-                ax.legend()
+                fig_biva.patch.set_facecolor('white'); ax.set_facecolor('white')
+                ax.scatter(d['Rz']/(h/100), d['Xc']/(h/100), c='red', s=100, label="DX", edgecolor='black')
+                if d_sx: ax.scatter(d_sx['Rz']/(h/100), d_sx['Xc']/(h/100), c='cyan', s=80, label="SX", edgecolor='black')
+                ax.invert_yaxis(); ax.grid(color='#eee', linestyle='--'); 
+                ax.spines['bottom'].set_color('black'); ax.spines['left'].set_color('black')
+                ax.tick_params(colors='black', labelsize=8)
+                ax.set_title("VETTORE BIVA (RXc)", fontsize=10, fontweight='bold', pad=10)
+                ax.set_xlabel("R/H (Ohm/m)", fontsize=8); ax.set_ylabel("Xc/H (Ohm/m)", fontsize=8)
+                ax.legend(fontsize=8)
                 st.pyplot(fig_biva)
+                
             with c_g2:
-                if mode == "Bilateral (DX+SX)" and d_sx:
+                # GRAFICO BARRE COMPOSIZIONE
+                fig_bars, ax2 = plt.subplots(figsize=(4, 5))
+                fig_bars.patch.set_facecolor('white'); ax2.set_facecolor('white')
+                bars = ax2.barh(['FM', 'SMM', 'BCM'], [d['FM_kg'], d['SMM_kg'], d['BCM_kg']], color=['#fca5a5', '#E20613', '#4ade80'])
+                ax2.bar_label(bars, fmt='%.1f kg', padding=3, fontsize=8)
+                ax2.set_title("COMPOSIZIONE (KG)", fontsize=10, fontweight='bold', pad=10)
+                ax2.spines['bottom'].set_color('black'); ax2.spines['left'].set_color('black')
+                ax2.tick_params(colors='black', labelsize=8)
+                st.pyplot(fig_bars)
+                
+            if mode == "Bilateral (DX+SX)" and d_sx:
+                with c_g3:
+                    # BODY MAP
                     fig_body = draw_body_map(d['PhA'], d_sx['PhA'])
                     st.pyplot(fig_body)
 
         with t3:
+            st.subheader("Referto Clinico (Direttore Scientifico)")
+            if st.session_state.get('diagnosis'):
+                st.text_area("Testo", st.session_state['diagnosis'], height=600)
+            else:
+                st.info("Clicca per generare il referto.")
+            
             if st.button("ELABORA REFERTO COMPLETO"):
-                with st.spinner("Analisi..."):
+                with st.spinner("Analisi fisiologica profonda..."):
                     res = run_clinical_diagnosis(d, name, subject_type, gender, age, w, h, clinical_notes, d_sx)
                     st.session_state['diagnosis'] = res
                     st.rerun()
-            
-            if st.session_state.get('diagnosis'):
-                st.text_area("Testo", st.session_state['diagnosis'], height=600)
 
         st.markdown("---")
         c_s, c_p = st.columns(2)
@@ -198,21 +239,32 @@ def run_biva():
             if st.button("💾 ARCHIVIA"):
                 try:
                     save_visit(name, w, rz, xc, d['PhA'], d['TBW_L'], d['FM_perc'], d['FFM_kg'])
-                    st.success("Salvato")
+                    st.success("OK")
                 except: st.error("Errore DB")
+        
         with c_p:
-            if st.button("📄 CREA PDF"):
-                biva_path = os.path.join(tempfile.gettempdir(), "biva.png")
-                fig_biva.savefig(biva_path, dpi=150)
-                
-                body_path = None
-                if mode == "Bilateral (DX+SX)" and d_sx and 'fig_body' in locals():
-                    body_path = os.path.join(tempfile.gettempdir(), "body.png")
-                    fig_body.savefig(body_path, dpi=150)
-                
-                pdf = BivaReportPDF(name)
-                pdf_data = d.copy()
-                pdf_data['Report_Text'] = st.session_state.get('diagnosis', "")
-                pdf.generate_body(pdf_data, graph1_path=biva_path, body_map_path=body_path)
-                
-                st.download_button("SCARICA PDF", bytes(pdf.output(dest='S')), f"Referto_{name}.pdf", "application/pdf")
+            # GENERAZIONE PDF AUTOMATICA (SENZA DOPPIO TASTO)
+            try:
+                # Rigeneriamo al volo i grafici se non sono in memoria (es. cambio tab)
+                # Nota: fig_biva è definita nel blocco t2. Se Streamlit riesegue lo script, t2 viene eseguito e fig_biva esiste.
+                if fig_biva and fig_bars:
+                    biva_path = os.path.join(tempfile.gettempdir(), "biva.png")
+                    bars_path = os.path.join(tempfile.gettempdir(), "bars.png")
+                    fig_biva.savefig(biva_path, dpi=150, bbox_inches='tight')
+                    fig_bars.savefig(bars_path, dpi=150, bbox_inches='tight')
+                    
+                    body_path = None
+                    if mode == "Bilateral (DX+SX)" and d_sx and fig_body:
+                        body_path = os.path.join(tempfile.gettempdir(), "body.png")
+                        fig_body.savefig(body_path, dpi=150, bbox_inches='tight')
+                    
+                    pdf = BivaReportPDF(name)
+                    pdf_data = d.copy()
+                    pdf_data['Report_Text'] = st.session_state.get('diagnosis', "")
+                    pdf.generate_body(pdf_data, graph1_path=biva_path, graph2_path=bars_path, body_map_path=body_path)
+                    
+                    st.download_button("📄 SCARICA REFERTO PDF", bytes(pdf.output(dest='S').encode('latin-1')), f"Referto_{name}.pdf", "application/pdf")
+                else:
+                    st.warning("⚠️ Vai al tab 'GRAFICI' per generare le immagini prima di scaricare il PDF.")
+            except Exception as e:
+                st.error(f"Errore PDF: {e}")
