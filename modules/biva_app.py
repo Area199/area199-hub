@@ -12,7 +12,7 @@ from modules.calculations import calculate_advanced_metrics
 from modules.pdf_engine import BivaReportPDF
 from modules.storage import get_patient_history, save_visit
 
-# --- FUNZIONI GRAFICHE (Fuori dalla funzione principale per pulizia) ---
+# --- FUNZIONI GRAFICHE ---
 def draw_body_map(pha_dx, pha_sx):
     fig, ax = plt.subplots(figsize=(4, 6))
     fig.patch.set_facecolor('white'); ax.set_facecolor('white')
@@ -36,21 +36,18 @@ def draw_body_map(pha_dx, pha_sx):
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     return fig
 
-# --- FUNZIONE DIAGNOSI (Con il tuo Prompt Originale) ---
+# --- FUNZIONE DIAGNOSI ---
 def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None):
-    # Recupero chiave sicuro per il modulo
     key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
     if not key: return "Errore API Key: Controlla i secrets."
 
     try:
         client = openai.Client(api_key=key)
         
-        # 1. GESTIONE BILATERALE DINAMICA
         if data_sx:
             pha_dx = data['PhA']
             pha_sx = data_sx['PhA']
             diff_asym = abs(pha_dx - pha_sx)
-            
             dati_strumentali_block = f"""
             - PhA LATO DESTRO: {pha_dx}°
             - PhA LATO SINISTRO: {pha_sx}°
@@ -63,7 +60,6 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             - Rz: {data['Rz']} | Xc: {data['Xc']}
             """
 
-        # 2. PROMPT CLINICO ORIGINALE
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
         Il tuo compito è analizzare i dati BIA (Bioimpedenziometria) e redigere un referto tecnico altamente specializzato.
@@ -83,42 +79,17 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         - TBW: {data['TBW_L']} L | ECW: {data['ECW_L']} L | ICW: {data['ICW_L']} L
         - BCM: {data['BCM_kg']} kg
 
-        ISTRUZIONI DI ADATTAMENTO (IL TUO CERVELLO):
-        Prima di scrivere, analizza il profilo del soggetto e ADATTA la tua analisi secondo queste regole:
+        ISTRUZIONI DI ADATTAMENTO:
+        1. SE ASIMMETRIA > 1.0°: Evidenzia il lato deficitario.
+        2. SE ATLETA: Focus su Performance, Potenza, BCM.
+        3. SE SEDENTARIO: Focus su Rischio metabolico, Infiammazione (ECW).
+        4. SE CASI SPECIALI: Adatta in base alle note.
 
-        1. SE C'È ASIMMETRIA EVIDENTE (> 1.0° di differenza tra DX e SX):
-           - NON basare l'analisi solo sul valore più alto (sano).
-           - EVIDENZIA il lato sofferente (quello con PhA più basso).
-           - Scrivi chiaramente: "Rilevata forte asimmetria funzionale. Il lato [Destro/Sinistro] presenta deficit cellulare (PhA basso) rispetto al lato sano".
-           - Collega questo dato all'infortunio se presente nelle Note.
-
-        2. SE ATLETA (Agonista/Amatore):
-           - Focus: Performance, Potenza, Recupero, Carico di Glicogeno.
-           - Obiettivo: Massimizzare BCM e PhA.
-           - Linguaggio: "Ottimizzazione", "Riatletizzazione", "Potenziale".
-
-        3. SE SEDENTARIO / SOVRAPPESO:
-           - Focus: Rischio metabolico, Infiammazione silente (ECW alta), Sarcopenia.
-           - Obiettivo: Riduzione FM, Attivazione metabolica.
-           - Linguaggio: Medico-preventivo, Urgenza di intervento.
-
-        4. SE CASI SPECIALI (Gravidanza / Patologia / Protesi / Infortunio):
-           - Infortunio: Focus su infiammazione locale (ECW) e perdita di tono (PhA basso sul lato leso).
-           - Gravidanza: Focus assoluto su TBW e ECW. Ignora BF%.
-
-        --- INIZIO REFERTO (Scrivi direttamente il testo strutturato) ---
-
+        --- INIZIO REFERTO ---
         1. QUADRO CLINICO E FUNZIONALE
-        [Analizza lo stato generale incrociando i dati. Se c'è asimmetria, inizia SUBITO parlando di quella. Definisci se il soggetto è "In salute", "Infiammato" o "Infortunato". NON USARE MAI IL NOME DEL PAZIENTE.]
-
         2. COMPOSIZIONE CORPOREA E TESSUTI
-        [Analizza BF% e BCM. C'è troppa massa grassa o troppo poco muscolo?]
-
         3. STATO IDRATAZIONE E INFIAMMAZIONE
-        [Analizza ECW vs ICW. ECW Alta = Infiammazione/Stress.]
-
-        4. STRATEGIA DI INTERVENTO (Action Plan)
-        [Dai 3 direttive pratiche. Se c'è asimmetria, includi "Protocollo di recupero per l'arto deficitario".]
+        4. STRATEGIA DI INTERVENTO
         """
         
         response = client.chat.completions.create(
@@ -131,22 +102,23 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
     except Exception as e:
         return f"Errore generazione: {str(e)}"
 
-# --- FUNZIONE PRINCIPALE (Il "Contenitore" per il Hub) ---
+# --- FUNZIONE PRINCIPALE ---
 def run_biva():
-    # Stili CSS locali
     st.markdown("""<style>
         .stMetric { background-color: #111; padding: 10px; border-left: 3px solid #E20613; }
         div[data-testid="stMetricValue"] { color: #E20613 !important; }
     </style>""", unsafe_allow_html=True)
 
-    # --- SIDEBAR (Spostata dentro la funzione per non apparire sempre) ---
-    if os.path.exists("assets/logo_area199.png"): 
-        st.sidebar.image("assets/logo_area199.png", use_container_width=True)
+    # --- IMMAGINI SENZA "assets/" ---
+    if os.path.exists("logo_area199.png"): 
+        st.sidebar.image("logo_area199.png", use_container_width=True)
+    elif os.path.exists("logo_dark.jpg"):
+        st.sidebar.image("logo_dark.jpg", use_container_width=True)
     
     st.sidebar.header("1. ANAGRAFICA")
     name = st.sidebar.text_input("Nome Cognome", "Mario Rossi")
     subject_type = st.sidebar.text_input("Attività / Sport", value="Sedentario")
-    clinical_notes = st.sidebar.text_input("Note Cliniche / Stato", value="Nessuna", help="Scrivi liberamente (es. 'Infortunio Ginocchio SX'). L'AI leggerà questo campo.")
+    clinical_notes = st.sidebar.text_input("Note Cliniche", value="Nessuna")
     
     c1, c2 = st.sidebar.columns(2)
     gender = c1.selectbox("Sesso", ["M", "F"])
@@ -175,7 +147,6 @@ def run_biva():
         st.session_state['data_sx'] = calculate_advanced_metrics(rz_sx, xc_sx, h, w, age, gender) if mode == "Bilateral (DX+SX)" else None
         st.session_state['diagnosis'] = None
 
-    # --- MAIN PAGE ---
     if st.session_state.get('analyzed'):
         d = st.session_state['data']
         d_sx = st.session_state.get('data_sx')
@@ -188,68 +159,38 @@ def run_biva():
         with t1:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("PhA", f"{d['PhA']}°")
-            c2.metric("BF% (Grasso)", f"{d['FM_perc']}%") 
+            c2.metric("BF%", f"{d['FM_perc']}%") 
             c3.metric("SMM", f"{d['SMM_kg']} kg")
             c4.metric("TBW%", f"{d['TBW_perc']}%")
-            st.divider()
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                st.markdown("#### Composizione Corporea")
-                st.dataframe(pd.DataFrame({
-                    "Parametro": ["Grasso (FM)", "Magro (FFM)", "Muscolo (SMM)", "Cellule (BCM)"],
-                    "Valore (kg)": [d['FM_kg'], d['FFM_kg'], d['SMM_kg'], d['BCM_kg']]
-                }), hide_index=True, use_container_width=True)
-            with col_d2:
-                st.markdown("#### Bilancio Idrico")
-                st.dataframe(pd.DataFrame({
-                    "Compartimento": ["Acqua Totale (TBW)", "Extra-Cellulare (ECW)", "Intra-Cellulare (ICW)"],
-                    "Volume (L)": [d['TBW_L'], d['ECW_L'], d['ICW_L']]
-                }), hide_index=True, use_container_width=True)
+            
+            st.dataframe(pd.DataFrame({
+                "Parametro": ["FM (Grasso)", "FFM (Magro)", "BCM (Cellule)"],
+                "Valore (kg)": [d['FM_kg'], d['FFM_kg'], d['BCM_kg']]
+            }), hide_index=True)
 
         with t2:
-            if mode == "Bilateral (DX+SX)": c_g1, c_g2, c_g3 = st.columns([1, 1, 1])
-            else: c_g1, c_g2 = st.columns(2)
-                
+            c_g1, c_g2 = st.columns(2)
             with c_g1:
                 fig_biva, ax = plt.subplots(figsize=(4, 5))
-                fig_biva.patch.set_facecolor('white'); ax.set_facecolor('white')
-                ax.scatter(d['Rz']/(h/100), d['Xc']/(h/100), c='red', s=100, label="DX", edgecolor='black')
-                if d_sx: ax.scatter(d_sx['Rz']/(h/100), d_sx['Xc']/(h/100), c='cyan', s=80, label="SX", edgecolor='black')
-                ax.invert_yaxis(); ax.grid(color='#eee', linestyle='--'); 
-                ax.spines['bottom'].set_color('black'); ax.spines['left'].set_color('black')
-                ax.tick_params(colors='black', labelsize=8)
-                ax.set_title("VETTORE BIVA (RXc)", fontsize=10, fontweight='bold', pad=10)
-                ax.set_xlabel("R/H (Ohm/m)", fontsize=8); ax.set_ylabel("Xc/H (Ohm/m)", fontsize=8)
-                ax.legend(fontsize=8)
+                ax.scatter(d['Rz']/(h/100), d['Xc']/(h/100), c='red', s=100, label="DX")
+                if d_sx: ax.scatter(d_sx['Rz']/(h/100), d_sx['Xc']/(h/100), c='cyan', s=80, label="SX")
+                ax.invert_yaxis()
+                ax.legend()
                 st.pyplot(fig_biva)
-                
             with c_g2:
-                fig_bars, ax2 = plt.subplots(figsize=(4, 5))
-                fig_bars.patch.set_facecolor('white'); ax2.set_facecolor('white')
-                bars = ax2.barh(['FM', 'SMM', 'BCM'], [d['FM_kg'], d['SMM_kg'], d['BCM_kg']], color=['#fca5a5', '#E20613', '#4ade80'])
-                ax2.bar_label(bars, fmt='%.1f kg', padding=3, fontsize=8)
-                ax2.set_title("COMPOSIZIONE (KG)", fontsize=10, fontweight='bold', pad=10)
-                ax2.spines['bottom'].set_color('black'); ax2.spines['left'].set_color('black')
-                ax2.tick_params(colors='black', labelsize=8)
-                st.pyplot(fig_bars)
-                
-            if mode == "Bilateral (DX+SX)" and d_sx:
-                with c_g3:
+                if mode == "Bilateral (DX+SX)" and d_sx:
                     fig_body = draw_body_map(d['PhA'], d_sx['PhA'])
                     st.pyplot(fig_body)
 
         with t3:
-            st.subheader("Referto Clinico (Direttore Scientifico)")
-            if st.session_state.get('diagnosis'):
-                st.text_area("Testo", st.session_state['diagnosis'], height=600)
-            else:
-                st.info("Clicca per generare il referto.")
-            
             if st.button("ELABORA REFERTO COMPLETO"):
-                with st.spinner("Analisi fisiologica profonda..."):
+                with st.spinner("Analisi..."):
                     res = run_clinical_diagnosis(d, name, subject_type, gender, age, w, h, clinical_notes, d_sx)
                     st.session_state['diagnosis'] = res
                     st.rerun()
+            
+            if st.session_state.get('diagnosis'):
+                st.text_area("Testo", st.session_state['diagnosis'], height=600)
 
         st.markdown("---")
         c_s, c_p = st.columns(2)
@@ -257,25 +198,21 @@ def run_biva():
             if st.button("💾 ARCHIVIA"):
                 try:
                     save_visit(name, w, rz, xc, d['PhA'], d['TBW_L'], d['FM_perc'], d['FFM_kg'])
-                    st.success("OK")
+                    st.success("Salvato")
                 except: st.error("Errore DB")
         with c_p:
-            try:
+            if st.button("📄 CREA PDF"):
                 biva_path = os.path.join(tempfile.gettempdir(), "biva.png")
-                bars_path = os.path.join(tempfile.gettempdir(), "bars.png")
-                fig_biva.savefig(biva_path, dpi=150, bbox_inches='tight')
-                fig_bars.savefig(bars_path, dpi=150, bbox_inches='tight')
+                fig_biva.savefig(biva_path, dpi=150)
                 
                 body_path = None
                 if mode == "Bilateral (DX+SX)" and d_sx and 'fig_body' in locals():
                     body_path = os.path.join(tempfile.gettempdir(), "body.png")
-                    fig_body.savefig(body_path, dpi=150, bbox_inches='tight')
+                    fig_body.savefig(body_path, dpi=150)
                 
                 pdf = BivaReportPDF(name)
                 pdf_data = d.copy()
                 pdf_data['Report_Text'] = st.session_state.get('diagnosis', "")
-                pdf.generate_body(pdf_data, graph1_path=biva_path, graph2_path=bars_path, body_map_path=body_path)
+                pdf.generate_body(pdf_data, graph1_path=biva_path, body_map_path=body_path)
                 
-                st.download_button("📄 SCARICA REFERTO PDF", bytes(pdf.output(dest='S')), f"Referto_{name}.pdf", "application/pdf")
-            except Exception as e:
-                st.error(f"Errore PDF: {e}")
+                st.download_button("SCARICA PDF", bytes(pdf.output(dest='S')), f"Referto_{name}.pdf", "application/pdf")
