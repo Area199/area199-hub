@@ -3,6 +3,7 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 import streamlit as st
 import datetime
+import re
 
 def get_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -11,69 +12,84 @@ def get_client():
     return gspread.authorize(creds)
 
 def clean_float(value):
-    """Pulisce i numeri da virgole e simboli"""
-    if value is None or str(value).strip() == "": return 0.0
-    # Sostituisce la virgola con il punto
-    s_val = str(value).replace(',', '.').replace('%', '').strip()
+    """Pulisce i numeri da virgole e %"""
+    if value is None: return 0.0
+    s_val = str(value).replace(',', '.')
+    # Toglie tutto quello che non è numero o punto (es. "18.5%" -> "18.5")
+    s_val = re.sub(r'[^\d\.-]', '', s_val)
     try:
         return float(s_val)
     except:
         return 0.0
 
 def get_patient_history(patient_name):
-    """Recupera lo storico da AREA199_DB"""
+    """Recupera lo storico mappando ESATTAMENTE le tue colonne"""
     try:
         client = get_client()
         sh = client.open("AREA199_DB")
         worksheet = sh.worksheet("BIVA_LOGS")
         
-        # Legge tutto come testo
         data = worksheet.get_all_values()
-        
         if not data or len(data) < 2: return pd.DataFrame()
             
-        # Intestazioni (Riga 1)
-        headers = [str(h).strip().lower() for h in data[0]] 
+        # Intestazioni originali (senza toccarle troppo, solo strip)
+        headers = [str(h).strip() for h in data[0]] 
         rows = data[1:]
         df = pd.DataFrame(rows, columns=headers)
         
-        # Cerca la colonna Paziente
+        # Cerca la colonna Paziente (flessibile sul nome colonna paziente)
         col_name = None
         for c in df.columns:
-            if "paziente" in c or "nome" in c or "soggetto" in c:
+            if c.lower() in ["paziente", "nome", "soggetto", "name"]:
                 col_name = c
                 break
-        
         if not col_name: return pd.DataFrame()
 
-        # Filtra per nome
+        # Filtra per nome paziente
         target_name = patient_name.strip().lower()
         df_filtered = df[df[col_name].astype(str).str.strip().str.lower() == target_name].copy()
         
         if df_filtered.empty: return pd.DataFrame()
 
-        # MAPPA COMPLETA PER TUTTI I CAMPI RICHIESTI
-        map_cols = {
-            'Data': ['data', 'date'],
-            'Peso': ['peso', 'weight', 'kg'],
-            'Rz':   ['rz', 'resistenza', 'res'],
-            'Xc':   ['xc', 'reattanza', 'rea'],
-            'PhA':  ['pha', 'phase', 'angolo', 'phase angle'],
-            'TBW':  ['tbw', 'acqua', 'water', 'tbw_l'],
-            'FM%':  ['fm%', 'bf%', 'fat%', 'massa grassa %'],
-            'FFM':  ['ffm', 'massa magra', 'ffm_kg'],
-            'BCM':  ['bcm', 'massa cellulare', 'bcm_kg'] # Se presente
+        # --- MAPPA ESATTA: TUE COLONNE -> CHIAVI SISTEMA ---
+        # Sinistra: Chiave che usa il PDF / Destra: Nome esatto nel tuo Excel/Drive
+        exact_map = {
+            'Data':    'Data',
+            'Weight':  'Peso',
+            'Rz':      'Rz',
+            'Xc':      'Xc',
+            'PhA':     'PhA',
+            'TBW_L':   'TBW',
+            'FM_perc': 'FM%',
+            'FFM_kg':  'FFM',
+            'BCM_kg':  'BCM' # Se presente
         }
         
-        final_df = df_filtered.copy()
-        for std_key, possible_names in map_cols.items():
-            for col in final_df.columns:
-                if col in possible_names:
-                    final_df.rename(columns={col: std_key}, inplace=True)
-                    if std_key != 'Data':
-                        final_df[std_key] = final_df[std_key].apply(clean_float)
-                    break
+        final_df = pd.DataFrame()
         
+        # Costruisce il dataframe finale traducendo le colonne
+        for pdf_key, sheet_col in exact_map.items():
+            # Cerca la colonna nel foglio (case insensitive per sicurezza)
+            found_col = None
+            for c in df_filtered.columns:
+                if c.lower() == sheet_col.lower():
+                    found_col = c
+                    break
+            
+            if found_col:
+                if pdf_key == 'Data':
+                    final_df[pdf_key] = df_filtered[found_col]
+                else:
+                    final_df[pdf_key] = df_filtered[found_col].apply(clean_float)
+            else:
+                # Se manca la colonna, metti 0.0
+                if pdf_key != 'Data':
+                    final_df[pdf_key] = 0.0
+        
+        # Aggiungiamo anche la chiave 'Date' (inglese) per compatibilità
+        if 'Data' in final_df.columns:
+            final_df['Date'] = final_df['Data']
+
         return final_df
 
     except Exception as e:
@@ -87,6 +103,8 @@ def save_visit(name, weight, rz, xc, pha, tbw, fm_perc, ffm_kg):
         
         date_str = datetime.datetime.now().strftime("%d/%m/%Y")
         
+        # Ordine ESATTO delle colonne che mi hai dato:
+        # Data, Paziente, Peso, Rz, Xc, PhA, TBW, FM%, FFM
         row = [
             date_str, 
             name, 
