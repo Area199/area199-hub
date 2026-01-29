@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+gspread
+google-auth
+openai
+matplotlib
+requests
+rapidfuzz
+fpdf
