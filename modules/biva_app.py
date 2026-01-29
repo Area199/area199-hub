@@ -12,7 +12,7 @@ from modules.calculations import calculate_advanced_metrics
 from modules.pdf_engine import BivaReportPDF
 from modules.storage import get_patient_history, save_visit
 
-# --- FUNZIONI GRAFICHE (IDENTICHE) ---
+# --- FUNZIONI GRAFICHE ---
 def draw_body_map(pha_dx, pha_sx):
     fig, ax = plt.subplots(figsize=(4, 6))
     fig.patch.set_facecolor('white'); ax.set_facecolor('white')
@@ -36,7 +36,7 @@ def draw_body_map(pha_dx, pha_sx):
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     return fig
 
-# --- DIAGNOSI CLINICA (AGGIORNATA: LEGGE TUTTO LO STORICO) ---
+# --- DIAGNOSI CLINICA (CON STORICO COMPLETO E DATA CORRETTA) ---
 def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None, history=None):
     key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
     if not key: return "Errore API Key."
@@ -61,25 +61,24 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             - Rz: {data['Rz']} | Xc: {data['Xc']}
             """
 
-        # 2. GESTIONE STORICO COMPLETA (NON SOLO PhA!)
+        # 2. GESTIONE STORICO (CORRETTA LETTURA DATA)
         storico_msg = "Nessun dato precedente."
         if history is not None and not history.empty:
             try:
                 last = history.iloc[-1]
-                # Tentativo di leggere tutte le metriche chiave dallo storico
-                # Usiamo .get con valore 0.0 di default per evitare crash
+                # Cerca la colonna data sia come 'Data' che come 'Date'
+                data_visita = last.get('Data', last.get('Date', 'Data ignota'))
+                
                 prev_pha = float(last.get('PhA', 0))
                 prev_fm = float(last.get('FM_perc', 0))
                 prev_bcm = float(last.get('BCM_kg', 0))
-                prev_tbw = float(last.get('TBW_L', 0))
                 
-                # Calcolo differenze
                 d_pha = data['PhA'] - prev_pha
                 d_fm = data['FM_perc'] - prev_fm
                 d_bcm = data['BCM_kg'] - prev_bcm
                 
                 storico_msg = f"""
-                CONFRONTO CON VISITA DEL {last.get('Date','?')}:
+                CONFRONTO CON VISITA DEL {data_visita}:
                 - Angolo di Fase: {prev_pha}° -> {data['PhA']}° (Variazione: {d_pha:+.1f}°)
                 - Massa Grassa (FM%): {prev_fm}% -> {data['FM_perc']}% (Variazione: {d_fm:+.1f}%)
                 - Massa Cellulare (BCM): {prev_bcm} kg -> {data['BCM_kg']} kg (Variazione: {d_bcm:+.1f} kg)
@@ -87,7 +86,7 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             except:
                 storico_msg = "Dati storici presenti ma formato non leggibile."
 
-        # 3. PROMPT CLINICO (CON NUOVA SEZIONE STORICO COMPLETO)
+        # 3. PROMPT CLINICO (AGGIORNATO)
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
         Il tuo compito è analizzare i dati BIA e redigere un referto tecnico altamente specializzato.
@@ -115,15 +114,15 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         REGOLA D'ORO:
         NON USARE MAI LA TERZA PERSONA ("Il soggetto presenta...").
         RIVOLGITI DIRETTAMENTE A LUI/LEI usando il "LEI" professionale o forme impersonali dirette.
+        Esempio: "Dall'analisi emerge...", "La sua massa cellulare..."
         
         1. SE C'È STORICO (Variazioni):
+           - CITA LA DATA DEL CONFRONTO.
            - COMMENTA LE VARIAZIONI DI TUTTI I PARAMETRI (PhA, Grasso, Muscolo).
-           - Esempio: "Rispetto alla visita precedente, notiamo un incremento della massa cellulare e una riduzione del grasso..."
-           - Se il PhA scende, segnalalo come campanello d'allarme.
+           - Esempio: "Rispetto alla visita del [Data], notiamo un incremento della massa cellulare e una riduzione del grasso..."
 
         2. SE C'È ASIMMETRIA EVIDENTE (> 1.0°):
            - Evidenzia il lato sofferente.
-           - Scrivi chiaramente: "Rilevata forte asimmetria funzionale..."
 
         3. SE ATLETA: Focus su Performance e Potenza.
         4. SE SEDENTARIO: Focus su Rischio metabolico e Infiammazione.
@@ -131,7 +130,7 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
 
         --- INIZIO REFERTO ---
 
-        1. QUADRO CLINICO E ANDAMENTO (Commenta qui lo storico se c'è)
+        1. QUADRO CLINICO E ANDAMENTO (Cita qui lo storico e la data se presenti)
         [Analizza lo stato generale. Se c'è un confronto storico, USALO QUI.]
 
         2. COMPOSIZIONE CORPOREA E TESSUTI
@@ -159,6 +158,9 @@ def run_biva():
     st.markdown("""<style>
         .stMetric { background-color: #111; padding: 10px; border-left: 3px solid #E20613; }
         div[data-testid="stMetricValue"] { color: #E20613 !important; }
+        .delta-pos { color: #4ade80; font-weight: bold; }
+        .delta-neg { color: #ef4444; font-weight: bold; }
+        .history-box { background-color: #1a1a1a; border: 1px solid #333; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
     </style>""", unsafe_allow_html=True)
 
     if os.path.exists("logo_area199.png"): 
@@ -199,7 +201,7 @@ def run_biva():
         st.session_state['data_sx'] = calculate_advanced_metrics(rz_sx, xc_sx, h, w, age, gender) if mode == "Bilateral (DX+SX)" else None
         st.session_state['diagnosis'] = None
         
-        # 2. CERCA STORICO NEL DB
+        # 2. CERCA STORICO
         try:
             st.session_state['history'] = get_patient_history(name)
         except:
@@ -213,15 +215,58 @@ def run_biva():
         st.title(f"ANALISI: {name}")
         st.caption(f"Ref: Dott. Petruzzi | Profilo: {subject_type} | Note: {clinical_notes}")
         
-        # 3. MOSTRA MINI-CONFRONTO VISIVO (PhA)
+        # --- 3. DISPLAY STORICO COMPLETO (VISUALE) ---
         if hist is not None and not hist.empty:
             last = hist.iloc[-1]
+            date_visita = last.get('Data', last.get('Date', 'N/D'))
+            
             try:
                 prev_pha = float(last.get('PhA', 0))
-                delta = d['PhA'] - prev_pha
-                color = "green" if delta >= 0 else "red"
-                st.markdown(f"**CONFRONTO STORICO ({last.get('Date','')}):** PhA Precedente: {prev_pha}° -> Variazione: :{color}[{delta:+.1f}°]")
-            except: pass
+                prev_fm = float(last.get('FM_perc', 0))
+                prev_bcm = float(last.get('BCM_kg', 0))
+                
+                d_pha = d['PhA'] - prev_pha
+                d_fm = d['FM_perc'] - prev_fm
+                d_bcm = d['BCM_kg'] - prev_bcm
+                
+                # Tabella KPI
+                k1, k2, k3 = st.columns(3)
+                
+                # Funzione helper per colori
+                def fmt_delta(val, inverse=False):
+                    color = "red"
+                    if inverse: # Per il grasso, meno è meglio (solitamente)
+                        color = "green" if val <= 0 else "red"
+                    else: # Per PhA e BCM, più è meglio
+                        color = "green" if val >= 0 else "red"
+                    return f":{color}[{val:+.1f}]"
+
+                k1.markdown(f"""
+                <div class='metric-box'>
+                    <small>Angolo di Fase (vs {date_visita})</small><br>
+                    <span style='font-size:1.5em; font-weight:bold'>{d['PhA']}°</span>
+                    <span>({fmt_delta(d_pha)})</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                k2.markdown(f"""
+                <div class='metric-box'>
+                    <small>Grasso FM% (vs {date_visita})</small><br>
+                    <span style='font-size:1.5em; font-weight:bold'>{d['FM_perc']}%</span>
+                    <span>({fmt_delta(d_fm, inverse=True)})</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                k3.markdown(f"""
+                <div class='metric-box'>
+                    <small>Cellule BCM (vs {date_visita})</small><br>
+                    <span style='font-size:1.5em; font-weight:bold'>{d['BCM_kg']} kg</span>
+                    <span>({fmt_delta(d_bcm)})</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            except Exception as e: 
+                st.warning("Impossibile calcolare i delta storici.")
 
         t1, t2, t3 = st.tabs(["DATI", "GRAFICI", "REFERTO"])
         
@@ -259,7 +304,7 @@ def run_biva():
                 ax.scatter(d['Rz']/(h/100), d['Xc']/(h/100), c='red', s=100, label="DX", edgecolor='black')
                 if d_sx: ax.scatter(d_sx['Rz']/(h/100), d_sx['Xc']/(h/100), c='cyan', s=80, label="SX", edgecolor='black')
                 
-                # PUNTINI GRIGI STORICO (Se vuoi vederli nel grafico)
+                # VISUALIZZA PUNTI STORICI SUL GRAFICO
                 if hist is not None and not hist.empty:
                     for idx, row in hist.iterrows():
                         try:
@@ -300,7 +345,6 @@ def run_biva():
             
             if st.button("ELABORA REFERTO COMPLETO"):
                 with st.spinner("Analisi fisiologica (confronto storico completo)..."):
-                    # PASSIAMO LO STORICO ALL'AI
                     res = run_clinical_diagnosis(d, name, subject_type, gender, age, w, h, clinical_notes, d_sx, hist)
                     st.session_state['diagnosis'] = res
                     st.rerun()
@@ -331,14 +375,15 @@ def run_biva():
                     pdf_data = d.copy()
                     pdf_data['Report_Text'] = st.session_state.get('diagnosis', "")
                     
-                    # PASSIAMO I DATI PRECEDENTI AL PDF PER LA TABELLA
+                    # PREPARA DIZIONARIO STORICO PULITO (DATE vs DATA)
                     prev_dict = None
                     if hist is not None and not hist.empty:
                         prev_dict = hist.iloc[-1].to_dict()
+                        # Normalizza la chiave data per il PDF Engine
+                        if 'Data' in prev_dict: prev_dict['Date'] = prev_dict['Data']
 
                     pdf.generate_body(pdf_data, graph1_path=biva_path, graph2_path=bars_path, body_map_path=body_path, previous_data=prev_dict)
                     
-                    # Generazione sicura PDF
                     pdf_output = pdf.output(dest='S')
                     if isinstance(pdf_output, str): pdf_bytes = pdf_output.encode('latin-1')
                     else: pdf_bytes = bytes(pdf_output)
