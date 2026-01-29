@@ -24,11 +24,10 @@ def get_patient_history(patient_name):
     """Recupera lo storico da AREA199_DB"""
     try:
         client = get_client()
-        # PUNTA DRITTO AL FILE CORRETTO
         sh = client.open("AREA199_DB")
         worksheet = sh.worksheet("BIVA_LOGS")
         
-        # Legge tutto come testo per evitare errori di formato
+        # Legge tutto come testo
         data = worksheet.get_all_values()
         
         if not data or len(data) < 2: return pd.DataFrame()
@@ -38,7 +37,7 @@ def get_patient_history(patient_name):
         rows = data[1:]
         df = pd.DataFrame(rows, columns=headers)
         
-        # Cerca la colonna Paziente/Nome
+        # Cerca la colonna Paziente
         col_name = None
         for c in df.columns:
             if "paziente" in c or "nome" in c or "soggetto" in c:
@@ -53,13 +52,18 @@ def get_patient_history(patient_name):
         
         if df_filtered.empty: return pd.DataFrame()
 
-        # Mappa le colonne standard
+        # --- MAPPA AGGIORNATA CON I TUOI CAMPI ---
+        # Data, Paziente, Peso, Rz, Xc, PhA, TBW, FM%, FFM
         map_cols = {
-            'PhA': ['pha', 'phase', 'angolo'],
-            'FM%': ['fm%', 'bf%', 'massa grassa %', 'fat%'],
-            'TBW': ['tbw', 'acqua', 'water'],
+            'Data': ['data', 'date'],
             'Peso': ['peso', 'weight', 'kg'],
-            'Data': ['data', 'date']
+            'Rz':   ['rz', 'resistenza', 'res'],
+            'Xc':   ['xc', 'reattanza', 'rea'],
+            'PhA':  ['pha', 'phase', 'angolo', 'phase angle'],
+            'TBW':  ['tbw', 'acqua', 'water', 'tbw_l'],
+            'FM%':  ['fm%', 'bf%', 'fat%', 'massa grassa %'],
+            'FFM':  ['ffm', 'massa magra', 'ffm_kg'],
+            'BCM':  ['bcm', 'massa cellulare', 'bcm_kg'] # Opzionale se presente
         }
         
         final_df = df_filtered.copy()
@@ -68,26 +72,23 @@ def get_patient_history(patient_name):
                 if col in possible_names:
                     final_df.rename(columns={col: std_key}, inplace=True)
                     if std_key != 'Data':
-                        # Applica la pulizia virgola -> punto
                         final_df[std_key] = final_df[std_key].apply(clean_float)
                     break
         
         return final_df
 
     except Exception as e:
-        # st.error(f"Errore DB: {e}")
         return pd.DataFrame()
 
 def save_visit(name, weight, rz, xc, pha, tbw, fm_perc, ffm_kg):
     try:
         client = get_client()
-        sh = client.open("AREA199_DB") # NOME CORRETTO
+        sh = client.open("AREA199_DB")
         worksheet = sh.worksheet("BIVA_LOGS")
         
         date_str = datetime.datetime.now().strftime("%d/%m/%Y")
         
-        # Salviamo convertendo i punti in virgole per Excel italiano, o viceversa.
-        # Qui salvo come stringhe per sicurezza massima.
+        # Salviamo convertendo i punti in virgole per Excel italiano
         row = [
             date_str, 
             name, 
