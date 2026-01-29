@@ -582,11 +582,7 @@ def run_athlete_dashboard(email):
     # LINK DI RISERVA
     LINK_DEFAULT = "https://revolut.me/antope1909?currency=EUR&amount=40" 
     
-    st.sidebar.title("Login Atleta")
-    # L'email è passata dalla funzione principale, non serve richiederla
-    # email = st.sidebar.text_input("La tua Email") # RIMOSSO PERCHE' GIA' PASSATO
-    
-    # PULSANTE NON NECESSARIO SE GIA' LOGGATO, CARICHIAMO DIRETTAMENTE
+    st.sidebar.title("AREA ATLETA")
     
     # 1. CONTROLLO STATO
     is_blocked, color, msg, user_link, scadenza_display = check_subscription_status(email)
