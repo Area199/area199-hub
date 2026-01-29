@@ -87,6 +87,12 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         ISTRUZIONI DI ADATTAMENTO (IL TUO CERVELLO):
         Prima di scrivere, analizza il profilo del soggetto e ADATTA la tua analisi secondo queste regole:
 
+        REGOLA D'ORO:
+        NON USARE MAI LA TERZA PERSONA ("Il soggetto presenta...").
+        RIVOLGITI DIRETTAMENTE A LUI/LEI usando il "LEI" professionale o forme impersonali dirette.
+        Esempio corretto: "Dall'analisi emerge una buona idratazione..." oppure "La sua massa cellulare risulta..."
+        Esempio errato: "Il paziente mostra..."
+
         1. SE C'È ASIMMETRIA EVIDENTE (> 1.0° di differenza tra DX e SX):
            - NON basare l'analisi solo sul valore più alto (sano).
            - EVIDENZIA il lato sofferente (quello con PhA più basso).
