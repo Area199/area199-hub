@@ -14,13 +14,11 @@ class BivaReportPDF(FPDF):
         return text.encode('latin-1', 'replace').decode('latin-1').replace('?', '')
 
     def header(self):
-        # LOGO AREA199 (Versione Root)
         if os.path.exists("logo_area199.png"):
             self.image("logo_area199.png", 10, 8, 40)
-        elif os.path.exists("logo_dark.jpg"): # Fallback se manca il png
+        elif os.path.exists("logo_dark.jpg"):
             self.image("logo_dark.jpg", 10, 8, 40)
         
-        # INFO STUDIO
         self.set_font('Arial', 'B', 10)
         self.set_text_color(50)
         self.set_xy(120, 10)
@@ -28,31 +26,21 @@ class BivaReportPDF(FPDF):
         self.set_font('Arial', '', 8)
         self.set_xy(120, 15)
         self.cell(80, 5, 'Dott. Antonio Petruzzi - Performance Specialist', 0, 1, 'R')
-        
         self.ln(25)
         
-        # HEADER PAZIENTE
         self.set_font('Arial', 'B', 16)
         self.set_text_color(0)
         self.cell(110, 8, self.sanitize(self.patient_name), 0, 0, 'L')
-        
         self.set_font('Arial', '', 10)
         self.cell(80, 8, f"Data: {datetime.datetime.now().strftime('%d/%m/%Y')}", 0, 1, 'R')
-        
         self.set_draw_color(226, 6, 19)
         self.set_line_width(0.4)
         self.line(10, 45, 200, 45)
         self.ln(5)
 
     def footer(self):
-        # LOGO AKERN (Versione Root)
         if os.path.exists("logo_akern.png"):
             self.image("logo_akern.png", 160, 270, 25)
-            self.set_xy(100, 280)
-            self.set_font('Arial', 'I', 7)
-            self.set_text_color(100)
-            self.cell(85, 4, 'Misurazione rilevata con Akern 101 Gold Standard', 0, 0, 'R')
-
         self.set_y(-15)
         self.set_font('Arial', '', 7)
         self.set_text_color(150)
@@ -66,21 +54,6 @@ class BivaReportPDF(FPDF):
         self.cell(0, 8, f"  {self.sanitize(title)}", 0, 1, 'L', fill=True)
         self.ln(3)
 
-    def glossary_box(self):
-        self.ln(5)
-        self.set_font('Arial', 'B', 8)
-        self.set_text_color(0)
-        self.cell(0, 5, "GLOSSARIO PARAMETRI", 0, 1, 'L')
-        self.set_font('Arial', '', 7)
-        self.set_text_color(80)
-        self.multi_cell(0, 3.5, 
-            "PhA (Angolo di Fase): Indice di integrità delle membrane cellulari. >6 deg indica ottima struttura.\n"
-            "BCM (Body Cell Mass): Massa metabolicamente attiva. Il 'motore' del corpo.\n"
-            "ECW/ICW: Rapporto acqua esterna/interna. Un eccesso di ECW può indicare infiammazione.\n"
-            "Body Fat (BF%): Percentuale di massa grassa totale."
-        )
-        self.ln(5)
-
     def kpi_grid(self, data, prev_data=None):
         self.set_font('Arial', '', 9)
         self.set_text_color(0)
@@ -91,22 +64,23 @@ class BivaReportPDF(FPDF):
         self.cell(50, 6, "PARAMETRO", 1, 0, 'L', True)
         self.cell(40, 6, "VALORE ATTUALE", 1, 0, 'C', True)
         
-        if prev_data:
-            self.cell(40, 6, f"PREC. ({prev_data.get('Date', 'N/D')})", 1, 0, 'C', True)
-            self.cell(30, 6, "VARIAZIONE", 1, 1, 'C', True)
-        else:
-            self.cell(70, 6, "", 1, 1, 'C', True)
+        date_prev = prev_data.get('Date', 'N/D') if prev_data else "N/D"
+        self.cell(40, 6, f"PREC. ({date_prev})", 1, 0, 'C', True)
+        self.cell(30, 6, "VARIAZIONE", 1, 1, 'C', True)
 
-        def add_row(label, val_curr, unit, key_prev=None):
+        def add_row(label, val_curr, unit, key_prev=None, data_key=None):
             self.set_font('Arial', '', 9)
             self.cell(50, 7, label, 1)
             self.set_font('Arial', 'B', 9)
-            self.cell(40, 7, f"{val_curr} {unit}", 1, 0, 'C')
+            
+            # Recupera valore attuale
+            val_c = data.get(data_key, val_curr) if data_key else val_curr
+            self.cell(40, 7, f"{val_c} {unit}", 1, 0, 'C')
             
             if prev_data and key_prev and key_prev in prev_data:
                 try:
                     val_prev = float(prev_data[key_prev])
-                    val_curr_float = float(val_curr)
+                    val_curr_float = float(val_c)
                     delta = val_curr_float - val_prev
                     sign = "+" if delta > 0 else ""
                     self.set_font('Arial', '', 9)
@@ -120,13 +94,15 @@ class BivaReportPDF(FPDF):
             else:
                 self.cell(70, 7, "-", 1, 1, 'C')
 
+        # AGGIUNTE RIGHE MANCANTI (Peso, Rz, Xc)
+        add_row("Peso Corporeo", data.get('Weight', 0), "kg", 'Peso', 'Weight')
+        add_row("Resistenza (Rz)", data.get('Rz', 0), "ohm", 'Rz', 'Rz')
+        add_row("Reattanza (Xc)", data.get('Xc', 0), "ohm", 'Xc', 'Xc')
         add_row("Angolo di Fase (PhA)", data['PhA'], "deg", 'PhA')
+        add_row("Idratazione (TBW)", data['TBW_L'], "L", 'TBW_L')
         add_row("Body Fat (BF%)", data['FM_perc'], "%", 'FM_perc')
-        add_row("Massa Magra (FFM)", data['FFM_kg'], "kg")
-        add_row("Muscolo (SMM)", data['SMM_kg'], "kg")
-        add_row("Cellule (BCM)", data['BCM_kg'], "kg")
-        add_row("Acqua Totale (TBW)", data['TBW_L'], "L", 'TBW_L')
-        add_row("Acqua Extra (ECW)", data['ECW_L'], "L")
+        add_row("Massa Magra (FFM)", data['FFM_kg'], "kg", 'FFM_kg')
+        add_row("Cellule (BCM)", data['BCM_kg'], "kg", 'BCM_kg')
         
         self.ln(5)
 
@@ -141,7 +117,6 @@ class BivaReportPDF(FPDF):
         if body_map_path: self.image(body_map_path, x=140, y=y, w=50)
         
         self.ln(65)
-        self.glossary_box()
         self.add_page()
         
         self.section_title("RELAZIONE TECNICA & STRATEGIA")
