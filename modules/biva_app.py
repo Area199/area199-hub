@@ -36,20 +36,21 @@ def draw_body_map(pha_dx, pha_sx):
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     return fig
 
-# --- DIAGNOSI CLINICA (PROMPT ORIGINALE INTEGRALE) ---
+# --- DIAGNOSI CLINICA (PROMPT CORRETTO CON GESTIONE ASIMMETRIA) ---
 def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None):
-    # Recupero sicuro delle chiavi
     key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
     if not key: return "Errore API Key."
 
     try:
         client = openai.Client(api_key=key)
         
-        # Gestione dati bilaterali
+        # 1. GESTIONE BILATERALE DINAMICA
+        # Se abbiamo dati SX, mostriamo entrambi i PhA e calcoliamo la differenza
         if data_sx:
             pha_dx = data['PhA']
             pha_sx = data_sx['PhA']
             diff_asym = abs(pha_dx - pha_sx)
+            
             dati_strumentali_block = f"""
             - PhA LATO DESTRO: {pha_dx}°
             - PhA LATO SINISTRO: {pha_sx}°
@@ -57,12 +58,13 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             - Rz DX: {data['Rz']} | Rz SX: {data_sx['Rz']}
             """
         else:
+            # Caso Standard (Solo DX o Mono)
             dati_strumentali_block = f"""
             - PhA (Angolo di Fase): {data['PhA']}°
             - Rz: {data['Rz']} | Xc: {data['Xc']}
             """
 
-        # --- IL TUO PROMPT ESATTO ---
+        # 2. PROMPT CLINICO AGGIORNATO
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
         Il tuo compito è analizzare i dati BIA (Bioimpedenziometria) e redigere un referto tecnico altamente specializzato.
