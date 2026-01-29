@@ -12,7 +12,7 @@ from modules.calculations import calculate_advanced_metrics
 from modules.pdf_engine import BivaReportPDF
 from modules.storage import get_patient_history, save_visit
 
-# --- FUNZIONI GRAFICHE ORIGINALI ---
+# --- FUNZIONI GRAFICHE (Fuori dalla funzione principale per pulizia) ---
 def draw_body_map(pha_dx, pha_sx):
     fig, ax = plt.subplots(figsize=(4, 6))
     fig.patch.set_facecolor('white'); ax.set_facecolor('white')
@@ -36,22 +36,21 @@ def draw_body_map(pha_dx, pha_sx):
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     return fig
 
-# --- FUNZIONE DIAGNOSI ORIGINALE ---
+# --- FUNZIONE DIAGNOSI (Con il tuo Prompt Originale) ---
 def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None):
-    # Logica recupero chiavi adattata per il Hub
-    key = None
-    if "openai_key" in st.secrets: key = st.secrets["openai_key"]
-    elif "openai" in st.secrets: key = st.secrets["openai"]["api_key"]
-    
-    if not key: return "Errore API Key: Chiave mancante nei Secrets."
+    # Recupero chiave sicuro per il modulo
+    key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
+    if not key: return "Errore API Key: Controlla i secrets."
 
     try:
         client = openai.Client(api_key=key)
         
+        # 1. GESTIONE BILATERALE DINAMICA
         if data_sx:
             pha_dx = data['PhA']
             pha_sx = data_sx['PhA']
             diff_asym = abs(pha_dx - pha_sx)
+            
             dati_strumentali_block = f"""
             - PhA LATO DESTRO: {pha_dx}°
             - PhA LATO SINISTRO: {pha_sx}°
@@ -64,10 +63,11 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             - Rz: {data['Rz']} | Xc: {data['Xc']}
             """
 
+        # 2. PROMPT CLINICO ORIGINALE
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
-        Il tuo compito è analizzare i dati BIA e redigere un referto tecnico altamente specializzato.
-        Tono: Scientifico, Clinico, Oggettivo.
+        Il tuo compito è analizzare i dati BIA (Bioimpedenziometria) e redigere un referto tecnico altamente specializzato.
+        Il tuo tono è: Scientifico, Clinico, Oggettivo, Autoritario ("No Sugar-coating").
 
         DATI SOGGETTO:
         - Nome: {name}
@@ -75,7 +75,7 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         - Età: {age} anni
         - Sport/Attività: {subject_type}
         - Peso: {weight} kg | Altezza: {height} cm
-        - Note Cliniche: {clinical_notes}
+        - Note Cliniche/Stato: {clinical_notes}
 
         DATI STRUMENTALI:
         {dati_strumentali_block}
@@ -83,16 +83,42 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         - TBW: {data['TBW_L']} L | ECW: {data['ECW_L']} L | ICW: {data['ICW_L']} L
         - BCM: {data['BCM_kg']} kg
 
-        ISTRUZIONI:
-        1. SE ASIMMETRIA > 1.0°: Evidenzia il lato deficitario.
-        2. SE ATLETA: Focus su Performance, Potenza, BCM.
-        3. SE SEDENTARIO: Focus su Rischio metabolico, Infiammazione (ECW).
-        
-        Struttura il referto in:
+        ISTRUZIONI DI ADATTAMENTO (IL TUO CERVELLO):
+        Prima di scrivere, analizza il profilo del soggetto e ADATTA la tua analisi secondo queste regole:
+
+        1. SE C'È ASIMMETRIA EVIDENTE (> 1.0° di differenza tra DX e SX):
+           - NON basare l'analisi solo sul valore più alto (sano).
+           - EVIDENZIA il lato sofferente (quello con PhA più basso).
+           - Scrivi chiaramente: "Rilevata forte asimmetria funzionale. Il lato [Destro/Sinistro] presenta deficit cellulare (PhA basso) rispetto al lato sano".
+           - Collega questo dato all'infortunio se presente nelle Note.
+
+        2. SE ATLETA (Agonista/Amatore):
+           - Focus: Performance, Potenza, Recupero, Carico di Glicogeno.
+           - Obiettivo: Massimizzare BCM e PhA.
+           - Linguaggio: "Ottimizzazione", "Riatletizzazione", "Potenziale".
+
+        3. SE SEDENTARIO / SOVRAPPESO:
+           - Focus: Rischio metabolico, Infiammazione silente (ECW alta), Sarcopenia.
+           - Obiettivo: Riduzione FM, Attivazione metabolica.
+           - Linguaggio: Medico-preventivo, Urgenza di intervento.
+
+        4. SE CASI SPECIALI (Gravidanza / Patologia / Protesi / Infortunio):
+           - Infortunio: Focus su infiammazione locale (ECW) e perdita di tono (PhA basso sul lato leso).
+           - Gravidanza: Focus assoluto su TBW e ECW. Ignora BF%.
+
+        --- INIZIO REFERTO (Scrivi direttamente il testo strutturato) ---
+
         1. QUADRO CLINICO E FUNZIONALE
+        [Analizza lo stato generale incrociando i dati. Se c'è asimmetria, inizia SUBITO parlando di quella. Definisci se il soggetto è "In salute", "Infiammato" o "Infortunato". NON USARE MAI IL NOME DEL PAZIENTE.]
+
         2. COMPOSIZIONE CORPOREA E TESSUTI
+        [Analizza BF% e BCM. C'è troppa massa grassa o troppo poco muscolo?]
+
         3. STATO IDRATAZIONE E INFIAMMAZIONE
-        4. STRATEGIA DI INTERVENTO
+        [Analizza ECW vs ICW. ECW Alta = Infiammazione/Stress.]
+
+        4. STRATEGIA DI INTERVENTO (Action Plan)
+        [Dai 3 direttive pratiche. Se c'è asimmetria, includi "Protocollo di recupero per l'arto deficitario".]
         """
         
         response = client.chat.completions.create(
@@ -105,27 +131,22 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
     except Exception as e:
         return f"Errore generazione: {str(e)}"
 
-# --- FUNZIONE PRINCIPALE (QUESTA E' L'APP INTERA) ---
+# --- FUNZIONE PRINCIPALE (Il "Contenitore" per il Hub) ---
 def run_biva():
-    # Stili CSS originali
+    # Stili CSS locali
     st.markdown("""<style>
-        .stApp { background-color: #050505; color: #E0E0E0; }
-        h1, h2, h3 { font-family: 'Arial', sans-serif; color: #FFFFFF !important; }
         .stMetric { background-color: #111; padding: 10px; border-left: 3px solid #E20613; }
         div[data-testid="stMetricValue"] { color: #E20613 !important; }
-        .stButton > button { background-color: #E20613; color: white; border: none; font-weight: bold; width:100%; text-transform: uppercase;}
     </style>""", unsafe_allow_html=True)
 
-    # --- SIDEBAR IDENTICA ALL'ORIGINALE ---
-    # Nota: Poiché siamo in un modulo, st.sidebar aggiungerà elementi alla sidebar principale
-    st.sidebar.markdown("---")
+    # --- SIDEBAR (Spostata dentro la funzione per non apparire sempre) ---
     if os.path.exists("assets/logo_area199.png"): 
         st.sidebar.image("assets/logo_area199.png", use_container_width=True)
     
     st.sidebar.header("1. ANAGRAFICA")
     name = st.sidebar.text_input("Nome Cognome", "Mario Rossi")
     subject_type = st.sidebar.text_input("Attività / Sport", value="Sedentario")
-    clinical_notes = st.sidebar.text_input("Note Cliniche / Stato", value="Nessuna")
+    clinical_notes = st.sidebar.text_input("Note Cliniche / Stato", value="Nessuna", help="Scrivi liberamente (es. 'Infortunio Ginocchio SX'). L'AI leggerà questo campo.")
     
     c1, c2 = st.sidebar.columns(2)
     gender = c1.selectbox("Sesso", ["M", "F"])
@@ -154,7 +175,7 @@ def run_biva():
         st.session_state['data_sx'] = calculate_advanced_metrics(rz_sx, xc_sx, h, w, age, gender) if mode == "Bilateral (DX+SX)" else None
         st.session_state['diagnosis'] = None
 
-    # --- PAGINA PRINCIPALE IDENTICA ALL'ORIGINALE ---
+    # --- MAIN PAGE ---
     if st.session_state.get('analyzed'):
         d = st.session_state['data']
         d_sx = st.session_state.get('data_sx')
