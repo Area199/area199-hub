@@ -14,9 +14,11 @@ class BivaReportPDF(FPDF):
         return text.encode('latin-1', 'replace').decode('latin-1').replace('?', '')
 
     def header(self):
-        # LOGO
-        if os.path.exists("assets/logo_area199.png"):
-            self.image("assets/logo_area199.png", 10, 8, 40)
+        # LOGO AREA199 (Versione Root)
+        if os.path.exists("logo_area199.png"):
+            self.image("logo_area199.png", 10, 8, 40)
+        elif os.path.exists("logo_dark.jpg"): # Fallback se manca il png
+            self.image("logo_dark.jpg", 10, 8, 40)
         
         # INFO STUDIO
         self.set_font('Arial', 'B', 10)
@@ -43,9 +45,9 @@ class BivaReportPDF(FPDF):
         self.ln(5)
 
     def footer(self):
-        # LOGO AKERN FISSO IN FONDO
-        if os.path.exists("assets/logo_akern.png"):
-            self.image("assets/logo_akern.png", 160, 270, 25)
+        # LOGO AKERN (Versione Root)
+        if os.path.exists("logo_akern.png"):
+            self.image("logo_akern.png", 160, 270, 25)
             self.set_xy(100, 280)
             self.set_font('Arial', 'I', 7)
             self.set_text_color(100)
@@ -84,7 +86,6 @@ class BivaReportPDF(FPDF):
         self.set_text_color(0)
         self.set_draw_color(220)
         
-        # INTESTAZIONI COLONNE DINAMICHE
         self.set_font('Arial', 'B', 8)
         self.set_fill_color(250)
         self.cell(50, 6, "PARAMETRO", 1, 0, 'L', True)
@@ -94,9 +95,8 @@ class BivaReportPDF(FPDF):
             self.cell(40, 6, f"PREC. ({prev_data.get('Date', 'N/D')})", 1, 0, 'C', True)
             self.cell(30, 6, "VARIAZIONE", 1, 1, 'C', True)
         else:
-            self.cell(70, 6, "", 1, 1, 'C', True) # Colonna vuota se no storico
+            self.cell(70, 6, "", 1, 1, 'C', True)
 
-        # FUNZIONE RIGA DINAMICA
         def add_row(label, val_curr, unit, key_prev=None):
             self.set_font('Arial', '', 9)
             self.cell(50, 7, label, 1)
@@ -109,21 +109,17 @@ class BivaReportPDF(FPDF):
                     val_curr_float = float(val_curr)
                     delta = val_curr_float - val_prev
                     sign = "+" if delta > 0 else ""
-                    
                     self.set_font('Arial', '', 9)
                     self.cell(40, 7, f"{val_prev} {unit}", 1, 0, 'C')
-                    
                     self.set_font('Arial', 'B', 9)
-                    # Colore variazione (Verde/Rosso indicativo)
                     self.set_text_color(0, 100, 0) if delta > 0 else self.set_text_color(150, 0, 0)
                     self.cell(30, 7, f"{sign}{delta:.1f}", 1, 1, 'C')
-                    self.set_text_color(0) # Reset colore
+                    self.set_text_color(0)
                 except:
                     self.cell(70, 7, "-", 1, 1, 'C')
             else:
                 self.cell(70, 7, "-", 1, 1, 'C')
 
-        # RIGHE DATI
         add_row("Angolo di Fase (PhA)", data['PhA'], "deg", 'PhA')
         add_row("Body Fat (BF%)", data['FM_perc'], "%", 'FM_perc')
         add_row("Massa Magra (FFM)", data['FFM_kg'], "kg")
@@ -134,13 +130,10 @@ class BivaReportPDF(FPDF):
         
         self.ln(5)
 
-    # QUESTA E' LA FUNZIONE CHE DAVA ERRORE - ORA E' AGGIORNATA
     def generate_body(self, data, graph1_path=None, graph2_path=None, body_map_path=None, previous_data=None):
-        # 1. DATI
         self.section_title("DATI BIOMETRICI")
         self.kpi_grid(data, previous_data)
         
-        # 2. GRAFICI
         self.section_title("ANALISI STRUMENTALE")
         y = self.get_y()
         if graph1_path: self.image(graph1_path, x=10, y=y, w=60)
@@ -148,11 +141,9 @@ class BivaReportPDF(FPDF):
         if body_map_path: self.image(body_map_path, x=140, y=y, w=50)
         
         self.ln(65)
-        
         self.glossary_box()
         self.add_page()
         
-        # 3. REFERTO
         self.section_title("RELAZIONE TECNICA & STRATEGIA")
         self.ln(5)
         self.set_font('Arial', '', 10)
