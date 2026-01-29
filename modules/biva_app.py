@@ -10,9 +10,9 @@ import openai
 from PIL import Image
 from modules.calculations import calculate_advanced_metrics
 from modules.pdf_engine import BivaReportPDF
-from modules.storage import save_visit
+from modules.storage import get_patient_history, save_visit
 
-# --- FUNZIONI GRAFICHE ---
+# --- FUNZIONI GRAFICHE (IDENTICHE) ---
 def draw_body_map(pha_dx, pha_sx):
     fig, ax = plt.subplots(figsize=(4, 6))
     fig.patch.set_facecolor('white'); ax.set_facecolor('white')
@@ -36,14 +36,16 @@ def draw_body_map(pha_dx, pha_sx):
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     return fig
 
-# --- FUNZIONE DIAGNOSI (PROMPT ORIGINALE "DIRETTORE SCIENTIFICO") ---
+# --- DIAGNOSI CLINICA (PROMPT ORIGINALE INTEGRALE) ---
 def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None):
+    # Recupero sicuro delle chiavi
     key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
     if not key: return "Errore API Key."
 
     try:
         client = openai.Client(api_key=key)
         
+        # Gestione dati bilaterali
         if data_sx:
             pha_dx = data['PhA']
             pha_sx = data_sx['PhA']
@@ -60,10 +62,10 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             - Rz: {data['Rz']} | Xc: {data['Xc']}
             """
 
-        # --- IL TUO PROMPT ORIGINALE ---
+        # --- IL TUO PROMPT ESATTO ---
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
-        Il tuo compito è analizzare i dati BIA e redigere un referto tecnico altamente specializzato.
+        Il tuo compito è analizzare i dati BIA (Bioimpedenziometria) e redigere un referto tecnico altamente specializzato.
         Il tuo tono è: Scientifico, Clinico, Oggettivo, Autoritario ("No Sugar-coating").
 
         DATI SOGGETTO:
@@ -72,7 +74,7 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         - Età: {age} anni
         - Sport/Attività: {subject_type}
         - Peso: {weight} kg | Altezza: {height} cm
-        - Note Cliniche: {clinical_notes}
+        - Note Cliniche/Stato: {clinical_notes}
 
         DATI STRUMENTALI:
         {dati_strumentali_block}
@@ -80,17 +82,42 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         - TBW: {data['TBW_L']} L | ECW: {data['ECW_L']} L | ICW: {data['ICW_L']} L
         - BCM: {data['BCM_kg']} kg
 
-        ISTRUZIONI DI ADATTAMENTO:
-        1. SE ASIMMETRIA > 1.0°: Evidenzia il lato deficitario.
-        2. SE ATLETA: Focus su Performance, Potenza, BCM.
-        3. SE SEDENTARIO: Focus su Rischio metabolico, Infiammazione (ECW).
-        4. SE CASI SPECIALI: Adatta in base alle note.
+        ISTRUZIONI DI ADATTAMENTO (IL TUO CERVELLO):
+        Prima di scrivere, analizza il profilo del soggetto e ADATTA la tua analisi secondo queste regole:
 
-        --- INIZIO REFERTO ---
+        1. SE C'È ASIMMETRIA EVIDENTE (> 1.0° di differenza tra DX e SX):
+           - NON basare l'analisi solo sul valore più alto (sano).
+           - EVIDENZIA il lato sofferente (quello con PhA più basso).
+           - Scrivi chiaramente: "Rilevata forte asimmetria funzionale. Il lato [Destro/Sinistro] presenta deficit cellulare (PhA basso) rispetto al lato sano".
+           - Collega questo dato all'infortunio se presente nelle Note.
+
+        2. SE ATLETA (Agonista/Amatore):
+           - Focus: Performance, Potenza, Recupero, Carico di Glicogeno.
+           - Obiettivo: Massimizzare BCM e PhA.
+           - Linguaggio: "Ottimizzazione", "Riatletizzazione", "Potenziale".
+
+        3. SE SEDENTARIO / SOVRAPPESO:
+           - Focus: Rischio metabolico, Infiammazione silente (ECW alta), Sarcopenia.
+           - Obiettivo: Riduzione FM, Attivazione metabolica.
+           - Linguaggio: Medico-preventivo, Urgenza di intervento.
+
+        4. SE CASI SPECIALI (Gravidanza / Patologia / Protesi / Infortunio):
+           - Infortunio: Focus su infiammazione locale (ECW) e perdita di tono (PhA basso sul lato leso).
+           - Gravidanza: Focus assoluto su TBW e ECW. Ignora BF%.
+
+        --- INIZIO REFERTO (Scrivi direttamente il testo strutturato) ---
+
         1. QUADRO CLINICO E FUNZIONALE
+        [Analizza lo stato generale incrociando i dati. Se c'è asimmetria, inizia SUBITO parlando di quella. Definisci se il soggetto è "In salute", "Infiammato" o "Infortunato". NON USARE MAI IL NOME DEL PAZIENTE.]
+
         2. COMPOSIZIONE CORPOREA E TESSUTI
+        [Analizza BF% e BCM. C'è troppa massa grassa o troppo poco muscolo?]
+
         3. STATO IDRATAZIONE E INFIAMMAZIONE
-        4. STRATEGIA DI INTERVENTO
+        [Analizza ECW vs ICW. ECW Alta = Infiammazione/Stress.]
+
+        4. STRATEGIA DI INTERVENTO (Action Plan)
+        [Dai 3 direttive pratiche. Se c'è asimmetria, includi "Protocollo di recupero per l'arto deficitario".]
         """
         
         response = client.chat.completions.create(
@@ -103,14 +130,15 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
     except Exception as e:
         return f"Errore generazione: {str(e)}"
 
-# --- FUNZIONE PRINCIPALE ---
+# --- FUNZIONE PRINCIPALE APP ---
 def run_biva():
+    # Stili CSS
     st.markdown("""<style>
         .stMetric { background-color: #111; padding: 10px; border-left: 3px solid #E20613; }
         div[data-testid="stMetricValue"] { color: #E20613 !important; }
     </style>""", unsafe_allow_html=True)
 
-    # SIDEBAR
+    # --- SIDEBAR IDENTICA (Con loghi root) ---
     if os.path.exists("logo_area199.png"): 
         st.sidebar.image("logo_area199.png", use_container_width=True)
     elif os.path.exists("logo_dark.jpg"):
@@ -119,7 +147,7 @@ def run_biva():
     st.sidebar.header("1. ANAGRAFICA")
     name = st.sidebar.text_input("Nome Cognome", "Mario Rossi")
     subject_type = st.sidebar.text_input("Attività / Sport", value="Sedentario")
-    clinical_notes = st.sidebar.text_input("Note Cliniche", value="Nessuna")
+    clinical_notes = st.sidebar.text_input("Note Cliniche / Stato", value="Nessuna", help="Scrivi liberamente (es. 'Infortunio Ginocchio SX', 'Gravidanza', 'Diabete'). L'AI leggerà questo campo.")
     
     c1, c2 = st.sidebar.columns(2)
     gender = c1.selectbox("Sesso", ["M", "F"])
@@ -148,6 +176,7 @@ def run_biva():
         st.session_state['data_sx'] = calculate_advanced_metrics(rz_sx, xc_sx, h, w, age, gender) if mode == "Bilateral (DX+SX)" else None
         st.session_state['diagnosis'] = None
 
+    # --- PAGINA PRINCIPALE ---
     if st.session_state.get('analyzed'):
         d = st.session_state['data']
         d_sx = st.session_state.get('data_sx')
@@ -157,7 +186,7 @@ def run_biva():
         
         t1, t2, t3 = st.tabs(["DATI", "GRAFICI", "REFERTO"])
         
-        # Inizializza variabili grafici
+        # Variabili grafici inizializzate
         fig_biva, fig_bars, fig_body = None, None, None
 
         with t1:
@@ -237,9 +266,9 @@ def run_biva():
                 except: st.error("Errore DB")
         
         with c_p:
-            # CORREZIONE ERRORE PDF: Rimossa la chiamata .encode('latin-1')
+            # FIX PDF BYTEARRAY (Rimossa codifica manuale non necessaria)
             try:
-                # Rigenera immagini se necessario (es. cambio tab)
+                # Rigenera immagini al volo se mancano (es. dopo rerun)
                 if fig_biva and fig_bars:
                     biva_path = os.path.join(tempfile.gettempdir(), "biva.png")
                     bars_path = os.path.join(tempfile.gettempdir(), "bars.png")
@@ -256,16 +285,15 @@ def run_biva():
                     pdf_data['Report_Text'] = st.session_state.get('diagnosis', "")
                     pdf.generate_body(pdf_data, graph1_path=biva_path, graph2_path=bars_path, body_map_path=body_path)
                     
-                    # CORREZIONE QUI: pdf.output(dest='S') restituisce già bytes in fpdf2
-                    pdf_content = pdf.output(dest='S')
-                    # Se per qualche motivo fosse stringa (fpdf vecchio), encode. Se è bytearray (fpdf2), no.
-                    if isinstance(pdf_content, str):
-                        pdf_bytes = pdf_content.encode('latin-1')
+                    # Generazione sicura del PDF (gestione stringa/bytes)
+                    pdf_output = pdf.output(dest='S')
+                    if isinstance(pdf_output, str):
+                        pdf_bytes = pdf_output.encode('latin-1')
                     else:
-                        pdf_bytes = bytes(pdf_content)
+                        pdf_bytes = bytes(pdf_output)
 
                     st.download_button("📄 SCARICA REFERTO PDF", pdf_bytes, f"Referto_{name}.pdf", "application/pdf")
                 else:
-                    st.warning("⚠️ Vai al tab 'GRAFICI' per generare le immagini prima di scaricare il PDF.")
+                    st.warning("⚠️ Per scaricare il PDF, visualizza prima il tab 'GRAFICI'.")
             except Exception as e:
                 st.error(f"Errore PDF: {e}")
