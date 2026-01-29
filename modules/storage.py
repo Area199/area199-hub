@@ -52,8 +52,7 @@ def get_patient_history(patient_name):
         
         if df_filtered.empty: return pd.DataFrame()
 
-        # --- MAPPA AGGIORNATA CON I TUOI CAMPI ---
-        # Data, Paziente, Peso, Rz, Xc, PhA, TBW, FM%, FFM
+        # MAPPA COMPLETA PER TUTTI I CAMPI RICHIESTI
         map_cols = {
             'Data': ['data', 'date'],
             'Peso': ['peso', 'weight', 'kg'],
@@ -63,7 +62,7 @@ def get_patient_history(patient_name):
             'TBW':  ['tbw', 'acqua', 'water', 'tbw_l'],
             'FM%':  ['fm%', 'bf%', 'fat%', 'massa grassa %'],
             'FFM':  ['ffm', 'massa magra', 'ffm_kg'],
-            'BCM':  ['bcm', 'massa cellulare', 'bcm_kg'] # Opzionale se presente
+            'BCM':  ['bcm', 'massa cellulare', 'bcm_kg'] # Se presente
         }
         
         final_df = df_filtered.copy()
@@ -88,7 +87,6 @@ def save_visit(name, weight, rz, xc, pha, tbw, fm_perc, ffm_kg):
         
         date_str = datetime.datetime.now().strftime("%d/%m/%Y")
         
-        # Salviamo convertendo i punti in virgole per Excel italiano
         row = [
             date_str, 
             name, 
