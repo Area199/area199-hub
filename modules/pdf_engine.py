@@ -64,41 +64,53 @@ class BivaReportPDF(FPDF):
         self.cell(50, 6, "PARAMETRO", 1, 0, 'L', True)
         self.cell(40, 6, "VALORE ATTUALE", 1, 0, 'C', True)
         
-        date_prev = prev_data.get('Date', 'N/D') if prev_data else "N/D"
+        # Recupera data precedente (gestisce sia 'Data' che 'Date')
+        date_prev = "N/D"
+        if prev_data:
+            date_prev = prev_data.get('Data', prev_data.get('Date', 'N/D'))
+            
         self.cell(40, 6, f"PREC. ({date_prev})", 1, 0, 'C', True)
         self.cell(30, 6, "VARIAZIONE", 1, 1, 'C', True)
 
-        def add_row(label, val_curr, unit, key_prev=None, data_key=None):
+        def add_row(label, val_curr, unit, key_data):
             self.set_font('Arial', '', 9)
             self.cell(50, 7, label, 1)
             self.set_font('Arial', 'B', 9)
             
             # Valore attuale
-            val_c = data.get(data_key, val_curr) if data_key else val_curr
+            val_c = data.get(key_data, 0)
             self.cell(40, 7, f"{val_c} {unit}", 1, 0, 'C')
             
-            # Storico
-            if prev_data and key_prev and key_prev in prev_data:
+            # Valore storico (se esiste e > 0)
+            if prev_data and key_data in prev_data:
                 try:
-                    val_prev = float(prev_data[key_prev])
+                    val_prev = float(prev_data[key_data])
                     val_curr_float = float(val_c)
-                    delta = val_curr_float - val_prev
-                    sign = "+" if delta > 0 else ""
-                    self.set_font('Arial', '', 9)
-                    self.cell(40, 7, f"{val_prev} {unit}", 1, 0, 'C')
-                    self.set_font('Arial', 'B', 9)
-                    self.set_text_color(0, 100, 0) if delta > 0 else self.set_text_color(150, 0, 0)
-                    self.cell(30, 7, f"{sign}{delta:.1f}", 1, 1, 'C')
-                    self.set_text_color(0)
+                    
+                    if val_prev > 0:
+                        delta = val_curr_float - val_prev
+                        sign = "+" if delta > 0 else ""
+                        
+                        self.set_font('Arial', '', 9)
+                        self.cell(40, 7, f"{val_prev} {unit}", 1, 0, 'C')
+                        
+                        self.set_font('Arial', 'B', 9)
+                        # Verde se positivo, Rosso se negativo
+                        self.set_text_color(0, 100, 0) if delta > 0 else self.set_text_color(150, 0, 0)
+                        self.cell(30, 7, f"{sign}{delta:.1f}", 1, 1, 'C')
+                        self.set_text_color(0)
+                    else:
+                        self.set_font('Arial', '', 9)
+                        self.cell(70, 7, "-", 1, 1, 'C')    
                 except:
                     self.cell(70, 7, "-", 1, 1, 'C')
             else:
                 self.cell(70, 7, "-", 1, 1, 'C')
 
-        # TUTTE LE RIGHE RICHIESTE
-        add_row("Peso Corporeo", data.get('Weight', 0), "kg", 'Peso', 'Weight')
-        add_row("Resistenza (Rz)", data.get('Rz', 0), "ohm", 'Rz', 'Rz')
-        add_row("Reattanza (Xc)", data.get('Xc', 0), "ohm", 'Xc', 'Xc')
+        # TABELLA COMPLETA CON CHIAVI STANDARD
+        add_row("Peso Corporeo", data.get('Weight', 0), "kg", 'Weight')
+        add_row("Resistenza (Rz)", data.get('Rz', 0), "ohm", 'Rz')
+        add_row("Reattanza (Xc)", data.get('Xc', 0), "ohm", 'Xc')
         add_row("Angolo di Fase (PhA)", data['PhA'], "deg", 'PhA')
         add_row("Idratazione (TBW)", data['TBW_L'], "L", 'TBW_L')
         add_row("Body Fat (BF%)", data['FM_perc'], "%", 'FM_perc')
