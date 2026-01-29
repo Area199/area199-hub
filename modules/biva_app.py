@@ -36,8 +36,8 @@ def draw_body_map(pha_dx, pha_sx):
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     return fig
 
-# --- DIAGNOSI CLINICA (PROMPT CORRETTO CON GESTIONE ASIMMETRIA) ---
-def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None):
+# --- DIAGNOSI CLINICA (CON GESTIONE STORICO) ---
+def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height, clinical_notes, data_sx=None, history=None):
     key = st.secrets.get("openai_key") or st.secrets.get("openai", {}).get("api_key")
     if not key: return "Errore API Key."
 
@@ -45,7 +45,6 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         client = openai.Client(api_key=key)
         
         # 1. GESTIONE BILATERALE DINAMICA
-        # Se abbiamo dati SX, mostriamo entrambi i PhA e calcoliamo la differenza
         if data_sx:
             pha_dx = data['PhA']
             pha_sx = data_sx['PhA']
@@ -58,13 +57,22 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
             - Rz DX: {data['Rz']} | Rz SX: {data_sx['Rz']}
             """
         else:
-            # Caso Standard (Solo DX o Mono)
             dati_strumentali_block = f"""
             - PhA (Angolo di Fase): {data['PhA']}°
             - Rz: {data['Rz']} | Xc: {data['Xc']}
             """
 
-        # 2. PROMPT CLINICO AGGIORNATO
+        # 2. GESTIONE STORICO (NUOVA SEZIONE)
+        storico_msg = "Nessun dato precedente disponibile."
+        if history is not None and not history.empty:
+            try:
+                last = history.iloc[-1]
+                prev_pha = float(last.get('PhA', 0))
+                delta_pha = data['PhA'] - prev_pha
+                storico_msg = f"CONFRONTO CON VISITA DEL {last.get('Date','?')}: Il PhA precedente era {prev_pha}°. Variazione attuale: {delta_pha:+.1f}°."
+            except: pass
+
+        # 3. PROMPT CLINICO (IDENTICO AL TUO + SEZIONE STORICO)
         prompt = f"""
         Sei il Direttore Scientifico e Clinico di AREA199.
         Il tuo compito è analizzare i dati BIA (Bioimpedenziometria) e redigere un referto tecnico altamente specializzato.
@@ -84,6 +92,9 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         - TBW: {data['TBW_L']} L | ECW: {data['ECW_L']} L | ICW: {data['ICW_L']} L
         - BCM: {data['BCM_kg']} kg
 
+        STORICO PAZIENTE:
+        {storico_msg}
+
         ISTRUZIONI DI ADATTAMENTO (IL TUO CERVELLO):
         Prima di scrivere, analizza il profilo del soggetto e ADATTA la tua analisi secondo queste regole:
 
@@ -93,29 +104,33 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
         Esempio corretto: "Dall'analisi emerge una buona idratazione..." oppure "La sua massa cellulare risulta..."
         Esempio errato: "Il paziente mostra..."
 
-        1. SE C'È ASIMMETRIA EVIDENTE (> 1.0° di differenza tra DX e SX):
+        1. SE C'È STORICO DISPONIBILE:
+           - È OBBLIGATORIO commentare il miglioramento o peggioramento rispetto alla visita precedente.
+           - Se il PhA è salito, complimentati professionalmente. Se è sceso, evidenzia la criticità.
+
+        2. SE C'È ASIMMETRIA EVIDENTE (> 1.0° di differenza tra DX e SX):
            - NON basare l'analisi solo sul valore più alto (sano).
            - EVIDENZIA il lato sofferente (quello con PhA più basso).
            - Scrivi chiaramente: "Rilevata forte asimmetria funzionale. Il lato [Destro/Sinistro] presenta deficit cellulare (PhA basso) rispetto al lato sano".
            - Collega questo dato all'infortunio se presente nelle Note.
 
-        2. SE ATLETA (Agonista/Amatore):
+        3. SE ATLETA (Agonista/Amatore):
            - Focus: Performance, Potenza, Recupero, Carico di Glicogeno.
            - Obiettivo: Massimizzare BCM e PhA.
            - Linguaggio: "Ottimizzazione", "Riatletizzazione", "Potenziale".
 
-        3. SE SEDENTARIO / SOVRAPPESO:
+        4. SE SEDENTARIO / SOVRAPPESO:
            - Focus: Rischio metabolico, Infiammazione silente (ECW alta), Sarcopenia.
            - Obiettivo: Riduzione FM, Attivazione metabolica.
            - Linguaggio: Medico-preventivo, Urgenza di intervento.
 
-        4. SE CASI SPECIALI (Gravidanza / Patologia / Protesi / Infortunio):
+        5. SE CASI SPECIALI (Gravidanza / Patologia / Protesi / Infortunio):
            - Infortunio: Focus su infiammazione locale (ECW) e perdita di tono (PhA basso sul lato leso).
            - Gravidanza: Focus assoluto su TBW e ECW. Ignora BF%.
 
         --- INIZIO REFERTO (Scrivi direttamente il testo strutturato) ---
 
-        1. QUADRO CLINICO E FUNZIONALE
+        1. QUADRO CLINICO E FUNZIONALE (Includi qui il commento sullo STORICO se presente)
         [Analizza lo stato generale incrociando i dati. Se c'è asimmetria, inizia SUBITO parlando di quella. Definisci se il soggetto è "In salute", "Infiammato" o "Infortunato". NON USARE MAI IL NOME DEL PAZIENTE.]
 
         2. COMPOSIZIONE CORPOREA E TESSUTI
@@ -140,7 +155,6 @@ def run_clinical_diagnosis(data, name, subject_type, gender, age, weight, height
 
 # --- FUNZIONE PRINCIPALE APP ---
 def run_biva():
-    # Stili CSS
     st.markdown("""<style>
         .stMetric { background-color: #111; padding: 10px; border-left: 3px solid #E20613; }
         div[data-testid="stMetricValue"] { color: #E20613 !important; }
@@ -183,15 +197,32 @@ def run_biva():
         st.session_state['data'] = calculate_advanced_metrics(rz, xc, h, w, age, gender)
         st.session_state['data_sx'] = calculate_advanced_metrics(rz_sx, xc_sx, h, w, age, gender) if mode == "Bilateral (DX+SX)" else None
         st.session_state['diagnosis'] = None
+        
+        # --- CARICAMENTO STORICO (AGGIUNTO) ---
+        try:
+            st.session_state['history'] = get_patient_history(name)
+        except:
+            st.session_state['history'] = None
 
     # --- PAGINA PRINCIPALE ---
     if st.session_state.get('analyzed'):
         d = st.session_state['data']
         d_sx = st.session_state.get('data_sx')
+        hist = st.session_state.get('history')
         
         st.title(f"ANALISI: {name}")
         st.caption(f"Ref: Dott. Petruzzi | Profilo: {subject_type} | Note: {clinical_notes}")
         
+        # --- MOSTRA VECCHI DATI SE ESISTONO ---
+        if hist is not None and not hist.empty:
+            last = hist.iloc[-1]
+            try:
+                prev_pha = float(last.get('PhA', 0))
+                delta = d['PhA'] - prev_pha
+                color = "green" if delta >= 0 else "red"
+                st.markdown(f"**CONFRONTO STORICO ({last.get('Date','')}):** PhA Precedente: {prev_pha}° -> Variazione: :{color}[{delta:+.1f}°]")
+            except: pass
+
         t1, t2, t3 = st.tabs(["DATI", "GRAFICI", "REFERTO"])
         
         # Variabili grafici inizializzate
@@ -260,7 +291,8 @@ def run_biva():
             
             if st.button("ELABORA REFERTO COMPLETO"):
                 with st.spinner("Analisi fisiologica profonda..."):
-                    res = run_clinical_diagnosis(d, name, subject_type, gender, age, w, h, clinical_notes, d_sx)
+                    # PASSAGGIO STORICO ALL'AI
+                    res = run_clinical_diagnosis(d, name, subject_type, gender, age, w, h, clinical_notes, d_sx, hist)
                     st.session_state['diagnosis'] = res
                     st.rerun()
 
@@ -274,7 +306,6 @@ def run_biva():
                 except: st.error("Errore DB")
         
         with c_p:
-            # FIX PDF BYTEARRAY (Rimossa codifica manuale non necessaria)
             try:
                 # Rigenera immagini al volo se mancano (es. dopo rerun)
                 if fig_biva and fig_bars:
@@ -291,7 +322,13 @@ def run_biva():
                     pdf = BivaReportPDF(name)
                     pdf_data = d.copy()
                     pdf_data['Report_Text'] = st.session_state.get('diagnosis', "")
-                    pdf.generate_body(pdf_data, graph1_path=biva_path, graph2_path=bars_path, body_map_path=body_path)
+                    
+                    # Passaggio dati precedenti al PDF (se esistono)
+                    prev_dict = None
+                    if hist is not None and not hist.empty:
+                        prev_dict = hist.iloc[-1].to_dict()
+
+                    pdf.generate_body(pdf_data, graph1_path=biva_path, graph2_path=bars_path, body_map_path=body_path, previous_data=prev_dict)
                     
                     # Generazione sicura del PDF (gestione stringa/bytes)
                     pdf_output = pdf.output(dest='S')
